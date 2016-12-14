@@ -1,0 +1,40 @@
+{
+  "name": "video-chunks",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=4.4.0"
+  },
+  "scripts": {
+    "setup": "npm install -g http-server; mkdir lib dist",
+    "init": "npm run update; npm run build",
+    "update": "npm update",
+    "build": "npm run clean && tsc    -p . && browserify lib/index.js --standalone Main -o dist/index.js",
+    "start": "http-server -s & tsc -w -p .  &   watchify lib/index.js --standalone Main -o dist/index.js -v",
+    "stop": "killall -- node",
+    "browserify": "browserify lib/index.js --standalone Main -o dist/index.js",
+    "check": "tsc -w --noEmit -p ./",
+    "lint": "tslint -c ./tslint.json --project ./tsconfig.json --type-check",
+    "clean": "rm -rf lib/* dist/+",
+    "reset": "rm -rf node_modules",
+    "push": "git push origin hoge",
+    "pull": "git pull origin hoge"
+  },
+  "devDependencies": {
+    "browserify": "^13.1.0",
+    "tslint": "^3.15.1",
+    "typescript": "^2.0.3",
+    "watchify": "^3.7.0"
+  },
+  "dependencies": {
+    "@cycle/xstream-run": "^4.1.0",
+    "@types/node": "0.0.3",
+    "duxca.lib.js": "legokichi/duxca.lib.js#master",
+    "events": "^1.1.1",
+    "xstream": "^9.0.0"
+  },
+  "typings": "./lib/index.d.ts",
+  "main": "./dist/index.js",
+  "author": {
+    "name": "no name"
+  }
+}
