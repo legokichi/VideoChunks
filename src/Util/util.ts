@@ -1,37 +1,53 @@
-import xs, {Stream} from 'xstream';
-import {load_video} from "duxca.lib.js/lib/Media";
-import {getMediaStreamVideo} from "duxca.lib.js/lib/Media";
-import {fromEvent} from "duxca.lib.js/lib/Event";
-import {load_image, copy, createCanvas, cnvToBlob} from "duxca.lib.js/lib/Canvas";
-import {CanvasRenderer} from "duxca.lib.js/lib/CanvasRenderer";
-import {findMax} from "duxca.lib.js/lib/Statistics";
+import {dump} from "duxca.lib.js/lib/Algorithm";
+import {getThumbnail} from "duxca.lib.js/lib/Media";
 import {EventEmitter} from "events";
 
-export async function createThumbnail(video: HTMLVideoElement, currentTime: number): Promise<Blob> {
-  if(currentTime > video.duration){
-    return Promise.reject<Blob>(new Error("currentTime is out of video duration"));
+
+export function getThumbnails(video: HTMLVideoElement, period: number): Promise<Blob[]> {
+  const times: number[] = [];
+  if( ! Number.isFinite(video.duration) ){
+    return Promise.reject<Blob[]>(new Error("video duration is not finite"));
   }
-  video.currentTime = currentTime;
-  await fromEvent<Event>(video, "seeked");
-  const cnv = copy(video);
-  const blob = await cnvToBlob(cnv, "image/jpeg", 0.8);
-  return blob;
+  for(let currentTime=0; currentTime < video.duration; currentTime+=period){
+    times.push(currentTime);
+  }
+  const thumbs = times
+    .map((currentTime)=> (lst: Blob[])=> getThumbnail(video, currentTime).then((blob)=> lst.concat(blob) )  )
+    .reduce<Promise<Blob[]>>((prm, genPrm)=> prm.then(genPrm), Promise.resolve([]));
+  return thumbs;
+}
+
+
+export function elogger(err: Error){
+  return (a: string|Error)=>{
+    logger(a, err);
+  };
 }
 
 export function logger(str: string|Error, err?: Error){
-  if(str instanceof Error){
-    return logger(str.message +"\n"+ str.stack, err);
-  }
   if(err != null && err.stack != null){
     err.stack.split("\n").slice(1,2)
     .forEach((match)=>{ 
-      const _match = match.trim();
-      console.log(str, _match);
-      $("#log").append(`${str} ${_match}\n`);
+      const lineInfo = match.trim();
+      log(str, lineInfo);
     });
   }else{
-    console.log(str);
-    $("#log").append(`${str}\n`);
+    log(str);
+  }
+  function log(obj: any, lineInfo?: string){
+    let str = " ";
+    if(typeof obj === "object"){
+      try{
+        str = ` ${dump(obj, 2)} `;
+      }catch(err){}
+    }
+    if(typeof lineInfo === "string"){
+      console.log(obj, lineInfo);
+      $("#log").append(`${obj}${str}${lineInfo}\n`);
+    }else{
+      console.log(obj);
+      $("#log").append(`${obj}${str}\n`);
+    }
   }
 }
 

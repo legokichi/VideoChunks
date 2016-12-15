@@ -9,8 +9,7 @@ window["$"] = $; // for debug
 
 // 絶対エラー補足するくん
 window.addEventListener("error", (ev: ErrorEvent)=>{
-  logger(ev.error.message, new Error);
-  logger(ev.error.stack  , new Error);
+  logger(["## window.onerror ##", "name: "+ev.error.name, "message: "+ev.error.message, "stack: "+ev.error.stack].join("\n"), new Error);
 });
 
 $(()=>{

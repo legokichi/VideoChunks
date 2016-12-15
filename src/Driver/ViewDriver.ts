@@ -11,11 +11,16 @@ import {EventEmitter} from "events";
 
 import {on} from "duxca.lib.js/lib/XStream2JQuery";
 import {runEff, timeout} from "duxca.lib.js/lib/XStream";
+import {load_video} from "duxca.lib.js/lib/Media";
+import {load_image} from "duxca.lib.js/lib/Canvas";
 
-import {logger, getStorage, clipRect} from "../Util/util";
+import {logger, elogger, getStorage, clipRect, getThumbnails} from "../Util/util";
+
+import {adapter, fromEvent, xsasync, fromPromise} from "duxca.lib.js/lib/XStream";
 
 export interface Sources {
-  video$: Stream<HTMLVideoElement>;
+  act$: Stream<{ videoURL: string; startTime: number; }>;
+  state$: Stream<"recording"|"paused">
 }
 
 export interface Sinks {
@@ -27,8 +32,8 @@ export interface Sinks {
 }
 
 export function main(sources: Sources): Sinks {
-  const {video$} = sources;
-
+  const {act$, state$: _state$} = sources;
+  const state$ = _state$.startWith("paused");
   // parameter
 
   const element = document.createElement("div");
@@ -97,14 +102,9 @@ export function main(sources: Sources): Sinks {
 
   // intent
 
-  const _flag$ = on($toggle, "click").fold((a)=> !a, false);
-  const state$ = xs.merge(
-    _flag$.filter((a)=>  a).mapTo("recording"),
-    _flag$.filter((a)=> !a).mapTo("paused")
-  ).startWith("paused").compose(dropRepeats());
-
-  const start$ = state$.filter((a)=> a === "recording").map(()=>{ logger("start clicked"); });
-  const stop$  = state$.filter((a)=> a === "paused"   ).map(()=>{ logger("stop clicked"); });
+  const toggle$ = on($toggle, "click");
+  const start$ = toggle$.compose(sampleCombine(state$)).filter(([_,a])=> a === "paused"   ).map(()=>{ logger("start clicked"); });
+  const stop$  = toggle$.compose(sampleCombine(state$)).filter(([_,a])=> a === "recording").map(()=>{ logger("stop clicked"); });
   
   const devices$ = <Stream<MediaDeviceInfo[]>>xs.fromPromise(navigator.mediaDevices.enumerateDevices());
 
@@ -197,16 +197,27 @@ export function main(sources: Sources): Sinks {
 
 
 
-  runEff(video$.map((video)=>{
-    video.controls = true;
-    const {clip, ctx} = clipRect(video);
-    $(ctx.canvas).appendTo("body"); // for debug
-    $(video).appendTo("body"); // for debug
-    const eff$ = timeout(1000)
-      .compose(sampleCombine(fisheye$))
-      .map(([_, {centerX, centerY, radius}])=>{ clip(centerX, centerY, radius); });
-    return eff$;
-  }).flatten());
+  runEff(act$.map(({videoURL})=>{
+    return fromPromise((async ()=>{
+      console.log("riojko")
+      const video = await load_video(videoURL, true);
+      video.controls = true;
+      const {clip, ctx} = clipRect(video);
+      $(ctx.canvas).appendTo("body"); // for debug
+      $(video).appendTo("body"); // for debug
+      const eff$ = timeout(1000)
+        .compose(sampleCombine(fisheye$))
+        .map(([_, {centerX, centerY, radius}])=>{ clip(centerX, centerY, radius); });
+      const thumbnailBlobs = await getThumbnails(video, 1);
+      thumbnailBlobs
+        .map(URL.createObjectURL.bind(URL))
+        .map(load_image)
+        .map((a)=>
+          a.then((a)=>
+            $(a).appendTo("body") ) );
+      return eff$;
+    })(), elogger(new Error)).flatten();
+  }) );
 
 
   const element$ = xs.of(element);
