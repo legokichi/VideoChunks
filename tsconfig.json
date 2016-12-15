@@ -1,5 +1,5 @@
 {
-    "version": "2.0.0",
+    "version": "2.1.4",
     "compilerOptions": {
         "allowJs": false,
         "allowSyntheticDefaultImports": true,
@@ -29,7 +29,7 @@
         "noImplicitAny": false,
         "noImplicitReturns": true,
         //"noImplicitUseStrict": false,
-        "lib": ["dom", "es2017"],
+        "lib": ["dom", "es2015.core", "es2015.iterable", "es2015.generator", "es2015.promise", "es2017"],
         "noLib": false,
         "noResolve": false,
         "outDir": "lib",

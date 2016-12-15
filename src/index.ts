@@ -5,7 +5,7 @@ import {logger} from "./Util/util";
 
 window["$"] = $; // for debug
 
-console.clear();
+//console.clear();
 
 // 絶対エラー補足するくん
 window.addEventListener("error", (ev: ErrorEvent)=>{

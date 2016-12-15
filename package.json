@@ -16,8 +16,8 @@
     "lint": "tslint -c ./tslint.json --project ./tsconfig.json --type-check",
     "clean": "rm -rf lib/* dist/+",
     "reset": "rm -rf node_modules",
-    "push": "git push origin hoge",
-    "pull": "git pull origin hoge"
+    "push": "git push origin master",
+    "pull": "git pull origin master"
   },
   "devDependencies": {
     "browserify": "^13.1.0",

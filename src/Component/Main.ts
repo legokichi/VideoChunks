@@ -8,10 +8,12 @@ import delay from "xstream/extra/delay";
 import * as View from "../Driver/ViewDriver";
 
 import {fetchBlob} from "duxca.lib.js/lib/Ajax";
-import {adapter, fromEvent, reconnect} from "duxca.lib.js/lib/XStream";
+import {adapter, fromEvent} from "duxca.lib.js/lib/XStream";
 import {loadMediaStream, load_video} from "duxca.lib.js/lib/Media";
 
 import {logger} from "../Util/util";
+
+
 
 export interface Sources {
   View: View.Sinks;
@@ -27,7 +29,8 @@ export function main(sources: Sources): Sinks {
   // state
 
   // start 系列
-  const mediaStream$ = start$.debug("kadpok")
+
+  const mediaStream$ = start$
     .compose(sampleCombine(deviceIds$))
     .map(([_, {width, height, audioinput, videoinput}])=> ({
         audio: {deviceId: {exact: audioinput} },
@@ -58,8 +61,9 @@ export function main(sources: Sources): Sinks {
   const upload$ = xs.merge(
     start$.mapTo(true),
     stop$.mapTo(false) )
+    .startWith(false)
     .map((a)=> a ? xs.periodic(1000*60) : xs.never())
-    .compose(reconnect);
+    .flatten();
   const flush$ = xs.merge(upload$, stop$);
 
   // flush 系列
@@ -108,8 +112,6 @@ export function run($container: JQuery){
     View: View.makeDriver($container),
   });
 }
-
-
 
 
 

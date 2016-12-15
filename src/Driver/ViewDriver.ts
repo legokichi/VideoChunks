@@ -10,8 +10,9 @@ import delay from "xstream/extra/delay";
 import {EventEmitter} from "events";
 
 import {on} from "duxca.lib.js/lib/XStream2JQuery";
+import {runEff, timeout} from "duxca.lib.js/lib/XStream";
 
-import {logger, runEff, getStorage, clipRect} from "../Util/util";
+import {logger, getStorage, clipRect} from "../Util/util";
 
 export interface Sources {
   video$: Stream<HTMLVideoElement>;
@@ -196,13 +197,14 @@ export function main(sources: Sources): Sinks {
 
 
 
-  runEff(video$.compose(sampleCombine(fisheye$)).map(([video, {centerX, centerY, radius}])=>{
+  runEff(video$.map((video)=>{
     video.controls = true;
-    const {clip, ctx, set} = clipRect(video, centerX, centerY, radius);
-    const eff$ = fisheye$.map(({centerX, centerY, radius})=>{ set(centerX, centerY, radius); });
+    const {clip, ctx} = clipRect(video);
     $(ctx.canvas).appendTo("body"); // for debug
     $(video).appendTo("body"); // for debug
-    setInterval(clip, 1000);
+    const eff$ = timeout(1000)
+      .compose(sampleCombine(fisheye$))
+      .map(([_, {centerX, centerY, radius}])=>{ clip(centerX, centerY, radius); });
     return eff$;
   }).flatten());
 
