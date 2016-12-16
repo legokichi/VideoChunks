@@ -68,10 +68,10 @@ export function getStorage(){
 
 export function clipRect(
   video: HTMLVideoElement,
-  use_pow=false,
-  centerX=video.videoWidth/2,
-  centerY=video.videoHeight/2,
-  radius=Math.min(centerX, centerY)
+  left=0,
+  top=0,
+  radius=Math.min(video.videoWidth, video.videoHeight)/2,
+  targetWidth?: number
 ): {
     clip: (centerX: number, centerY: number, radius: number)=>void,
     ctx: CanvasRenderingContext2D
@@ -81,23 +81,24 @@ export function clipRect(
   const {videoWidth, videoHeight} = video;
   let [sx, sy, sw, sh, dx, dy, dw, dh] = [0,0,0,0,0,0,0,0];
   logger(`source video size${videoWidth}x${videoHeight}`);
-  update(centerX, centerY, radius);
+  update(left, top, radius);
   //document.body.appendChild(video); // for debug
   //document.body.appendChild(cnv); // for debug
-  let [cX, cY, r] = [centerX, centerY, radius];　// メモ化用の引数キャッシュ
+  let [l, t, r] = [left, top, radius];　// メモ化用の引数キャッシュ
   return {ctx, clip};
-  function clip(centerX: number, centerY: number, radius: number){
-    if(cX !== centerX || cY !== centerY || r !== radius){ // どれかひとつでも以前と異なっていたら
-      update(centerX, centerY, radius);
-      [cX, cY, r] = [centerX, centerY, radius];
+  function clip(left: number, top: number, radius: number){
+    if(l !== left || t !== top || r !== radius){ // どれかひとつでも以前と異なっていたら
+      update(left, top, radius);
+      [l, t, r] = [left, top, radius];
     }else{
       cnv.width = cnv.width;
     }
     ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
+    console.warn(sx, sy, sw, sh, dx, dy, dw, dh);
   }
-  function update(centerX: number, centerY: number, radius: number){
+  function update(left: number, top: number, radius: number){
     // side-effect function
-    const o = calc(centerX, centerY, radius, use_pow);
+    const o = calc(left, top, radius, targetWidth);
     //　構造化代入は再代入に使えない！
     sx = o.sx;
     sy = o.sy;
@@ -110,17 +111,16 @@ export function clipRect(
     cnv.width = dw;
     cnv.height = dh;
   }
-  function calc(centerX: number, centerY: number, radius: number, use_pow=false){
+  function calc(left: number, top: number, radius: number, targetWidth?: number){
     // pure function
     const clippedWidth  = radius*2; // 
     const clippedHeight = radius*2; 
-    const left = centerX - radius;
-    const top  = centerY - radius;
     logger(`clipped size${clippedWidth}x${clippedHeight}, (${left},${top})`);
     let pow = clippedHeight;
-    if(use_pow){
-      for(var i=0; clippedHeight > Math.pow(2, i); i++); // 2^n の大きさを得る
-      pow = Math.pow(2, i); // 解像度 // i+1 オーバーサンプリングして解像度をより高く
+    if(targetWidth != null){
+      pow = targetWidth;
+      //for(var i=0; clippedHeight > Math.pow(2, i); i++); // 2^n の大きさを得る
+      //pow = Math.pow(2, i); // 解像度 // i+1 オーバーサンプリングして解像度をより高く
     }
     let sx = left;
     let sw = clippedWidth;
@@ -147,3 +147,10 @@ export function clipRect(
   }
 }
 
+
+
+export function createLabel(devices: MediaDeviceInfo[], kind: string): { [deviceId: string]: string } {
+  return devices
+    .filter(({kind:a})=> kind === a)
+    .reduce<{[key:string]:string}>((o, {deviceId, label})=>(o[deviceId]=label, o), {});
+}

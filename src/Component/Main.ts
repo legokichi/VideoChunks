@@ -23,14 +23,14 @@ export interface Sinks {
 }
 
 export function main(sources: Sources): Sinks {
-  const {start$, stop$, deviceIds$, fisheye$} = sources.View;
+  const {start$, stop$, deviceConstraints$} = sources.View;
 
   // state
 
   // start 系列
 
   const context$ = start$
-    .compose(sampleCombine(deviceIds$))
+    .compose(sampleCombine(deviceConstraints$))
     .map(([_, {width, height, audioinput, videoinput}])=>{
       const opt = {
         audio: {deviceId: {exact: audioinput} },
@@ -101,7 +101,7 @@ export function main(sources: Sources): Sinks {
       logger(`stop streams and recording`);
       logger(`result (${JSON.stringify({startTime, url})})`);
       return {startTime, url};
-    })
+    });
   const act$ = result$
     .map(({url, startTime})=>{return {videoURL: url, startTime}; });
 

@@ -11,7 +11,7 @@
     "class-name": true,
     "curly": true,
     "eofline": false,
-    "forin": true,
+    "forin": false,
     "no-construct": true,
     "no-constructor-vars": false,
     "no-debugger": true,
