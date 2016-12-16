@@ -7,11 +7,11 @@ import delay from "xstream/extra/delay";
 
 import * as View from "../Driver/ViewDriver";
 
-import {adapter, fromEvent, xsasync, fromPromise} from "duxca.lib.js/lib/XStream";
+import {adapter, fromEvent, fromPromise, timeout, runEff} from "duxca.lib.js/lib/XStream";
 import {loadMediaStream, load_video} from "duxca.lib.js/lib/Media";
 
-import {logger, elogger} from "../Util/util";
-
+import {logger, elogger, createVideoClippedStream} from "../Util/util";
+import {FishEyeProps} from "../Util/ViewUtil";
 
 
 export interface Sources {
@@ -22,12 +22,21 @@ export interface Sinks {
   View: View.Sources;
 }
 
+export const REC_FPS = 20;
+
 export function main(sources: Sources): Sinks {
-  const {start$, stop$, deviceConstraints$} = sources.View;
+  const {start$, stop$, deviceConstraints$, fisheyeProps$} = sources.View;
 
   // state
 
   // start 系列
+
+  let [left, top, radius] = [0,0,0];
+  runEff(fisheyeProps$.map((o)=>{
+    left = o.left;
+    top = o.top;
+    radius = o.radius;
+  }))
 
   const context$ = start$
     .compose(sampleCombine(deviceConstraints$))
@@ -38,31 +47,59 @@ export function main(sources: Sources): Sinks {
                 width: {min: width},
                 height: {min: height} } };
       logger(`use option: ${JSON.stringify(opt, null, "  ")}`);
-      return fromPromise(loadMediaStream(opt), elogger(new Error));
+      return fromPromise((async ()=>{
+        const stream = await loadMediaStream(opt);
+        logger("got MediaStream");
+        const cap = await createVideoClippedStream(stream, REC_FPS);
+        logger("got captureStream");
+        return cap;
+      })(), elogger(new Error));
     })
     .flatten()
-    .map((stream)=>{
-      logger("got MediaStream");
-      const rec = new MediaRecorder(stream, {"mimeType": 'video/webm; codecs="vp8, opus"'});
-      logger("got MediaRecorder");
-      rec.start();
-      type BlobEvent = MessageEvent;
+    .map((o)=>{
+      const {stream, cstream, clip, video, ctx} = o;
+
+      // 録画すべきメディアストリームを作成
+      const rec_stream: MediaStream = new (window["MediaStream"] || window["webkitMediaStream"])();
+      stream.getAudioTracks().forEach((track)=>{ rec_stream.addTrack(track); }); // 音声はそのまま録画
+      cstream.getVideoTracks().forEach((track)=>{ rec_stream.addTrack(track); }); // ビデオはクリッピングしたものを録画
+      logger("new MediaStream created");
+
+      // 録画設定
+      const rec = new MediaRecorder(rec_stream, {"mimeType": 'video/webm; codecs="vp8, opus"'});
       const chunks: Blob[] = [];
       rec.ondataavailable = (ev)=>{
         chunks.push(ev.data);
       };
+      logger("got MediaRecorder");
+
+      // 録画開始
       const startTime = Date.now();
+      const tid = setInterval(_loop, 1000/REC_FPS);
+      _loop();
+      video.play();
+      rec.start();
       logger(`startTime: ${startTime}`);
+      $(ctx.canvas).appendTo("body");
+
       return {stop, flush, startTime};
+
       function stop(){
+        clearInterval(tid);
+        $(ctx.canvas).remove();
+        video.pause();
         rec.ondataavailable = undefined;
         rec.stop();
-        stream
-          .getTracks()
-          .map((track)=>{ track.stop(); });
+        stream.getTracks().map((track)=>{ track.stop(); });
+        cstream.getTracks().map((track)=>{ track.stop(); });
+        rec_stream.getTracks().map((track)=>{ track.stop(); });
+        logger(`stopped. duration: ${Date.now() - startTime}ms`);
       }
       function flush(){
         return chunks.splice(0, chunks.length);
+      }
+      function _loop(){
+        clip(left, top, radius);
       }
     });
 
@@ -70,7 +107,7 @@ export function main(sources: Sources): Sinks {
     start$.mapTo(true),
     stop$.mapTo(false) )
     .startWith(false)
-    .map((a)=> a ? xs.periodic(1000*60) : xs.never())
+    .map((a)=> a ? xs.periodic(1000*5) : xs.never())
     .flatten();
   const flush$ = xs.merge(upload$, stop$);
 

@@ -1,6 +1,10 @@
-import {dump} from "duxca.lib.js/lib/Algorithm";
-import {getThumbnail} from "duxca.lib.js/lib/Media";
+
 import {EventEmitter} from "events";
+
+import {dump} from "duxca.lib.js/lib/Algorithm";
+import {getThumbnail, getVideoFromMediaStream} from "duxca.lib.js/lib/Media";
+import {createVideoCanvasRenderer} from "duxca.lib.js/lib/Canvas";
+
 
 
 export function getThumbnails(video: HTMLVideoElement, period: number): Promise<Blob[]> {
@@ -73,7 +77,7 @@ export function clipRect(
   radius=Math.min(video.videoWidth, video.videoHeight)/2,
   targetWidth?: number
 ): {
-    clip: (centerX: number, centerY: number, radius: number)=>void,
+    clip: (left: number, top: number, radius: number)=>void,
     ctx: CanvasRenderingContext2D
   } {
   const cnv = document.createElement("canvas");
@@ -94,7 +98,6 @@ export function clipRect(
       cnv.width = cnv.width;
     }
     ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
-    console.warn(sx, sy, sw, sh, dx, dy, dw, dh);
   }
   function update(left: number, top: number, radius: number){
     // side-effect function
@@ -149,8 +152,10 @@ export function clipRect(
 
 
 
-export function createLabel(devices: MediaDeviceInfo[], kind: string): { [deviceId: string]: string } {
-  return devices
-    .filter(({kind:a})=> kind === a)
-    .reduce<{[key:string]:string}>((o, {deviceId, label})=>(o[deviceId]=label, o), {});
+export async function createVideoClippedStream(stream: MediaStream, fps=30) {
+  const video = await getVideoFromMediaStream(stream);
+  const {ctx, clip} = clipRect(video);
+  const cnv = ctx.canvas;
+  const cstream = cnv.captureStream(fps);
+  return {cstream, ctx, clip, video, stream};
 }

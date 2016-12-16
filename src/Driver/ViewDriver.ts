@@ -11,11 +11,12 @@ import {on} from "duxca.lib.js/lib/XStream2JQuery";
 import {runEff, timeout} from "duxca.lib.js/lib/XStream";
 import {load_video} from "duxca.lib.js/lib/Media";
 import {load_image} from "duxca.lib.js/lib/Canvas";
-import {adapter, fromEvent, fromPromise} from "duxca.lib.js/lib/XStream";
+import {fromPromise} from "duxca.lib.js/lib/XStream";
 import {dump} from "duxca.lib.js/lib/Algorithm";
 
-import {logger, elogger, getStorage, clipRect, getThumbnails, createLabel} from "../Util/util";
-import {getInputStreamWithStorage, getCombinedSelectStreamWithStorage, getCombinedInputStreamWithStorage} from "../Util/ViewUtil";
+import {logger, elogger, clipRect} from "../Util/util";
+import {deviceConstraintsSettingView, DeviceConstraints} from "../Util/ViewUtil";
+import {fisheyeSettingView, FishEyeProps} from "../Util/ViewUtil";
 
 
 
@@ -28,29 +29,25 @@ export interface Sinks {
   element$: Stream<HTMLElement>;
   start$: Stream<void>;
   stop$: Stream<void>;
-  deviceConstraints$: Stream<{ audioinput: string, audiooutput: string, videoinput: string, width: number, height: number }>;
+  deviceConstraints$: Stream<DeviceConstraints>;
+  fisheyeProps$: Stream<FishEyeProps>;
 }
 
 export function main(sources: Sources): Sinks {
   const {act$, state$: _state$} = sources;
   const state$ = _state$.startWith("paused");
+
   // parameter
 
   const element = document.createElement("div");
-  const Storage = getStorage(); // local storage 
-  
-  // view
+  const DevSetView = deviceConstraintsSettingView();
+  const fishSetView = fisheyeSettingView();
 
+
+  // view
+  
   const $element = $(element);
   const $toggle = $("<button />").html("toggle");
-  const $audioinput = $("<select />").attr({name: "audioinput", id: "audioinput"});
-  const $audiooutput = $("<select />").attr({name: "audiooutput", id: "audiooutput"});
-  const $videoinput = $("<select />").attr({name: "videoinput", id: "videoinput"});
-  const $camWidth = $("<input />").attr({type: "number", name: "camWidth", id: "camWidth"}).val(300);
-  const $camHeight = $("<input />").attr({type: "number", name: "camHeight", id: "camHeight"}).val(300);
-  const $left = $("<input />").attr({type: "number", name: "left", id: "left"}).val(300);
-  const $top = $("<input />").attr({type: "number", name: "top", id: "top"}).val(300);
-  const $radius = $("<input />").attr({type: "number", name: "radius", id: "radius"}).val(300);
   const $state = $("<span />").attr({id: "state"});
   const $log = $("<textarea />").attr({id: "log"});
   const $newLens = $("<button/ >").html("新レンズ");
@@ -62,19 +59,13 @@ export function main(sources: Sources): Sinks {
       $("<label />").html("state: ").append($state), $("<br />"),
       $("<fieldset />").append(
         $("<legend />").html("user media"),
-        $("<label />").html("audioinput: ").append($audioinput), $("<br />"),
-        $("<label />").html("audiooutput: ").append($audiooutput), $("<br />"),
-        $("<label />").html("videoinput: ").append($videoinput), $("<br />"),
-        $("<label />").html("width: ").append($camWidth), $("<br />"),
-        $("<label />").html("height: ").append($camHeight), $("<br />"),
+        DevSetView.element
       ),
       $("<fieldset />").append(
         $("<legend />").html("fisheye"),
-        $("<label />").html("left: ").append($left), $("<br />"),
-        $("<label />").html("top: ").append($top), $("<br />"),
-        $("<label />").html("radius: ").append($radius), $("<br />"),
-        $newLens
-      )
+        fishSetView.element,
+      ),
+      $newLens,
     ),
     $("<fieldset />").append(
       $("<legend />").html("log"),
@@ -92,11 +83,11 @@ export function main(sources: Sources): Sinks {
   });
 
   $newLens.click(()=>{
-    $camWidth.val(2592).trigger("input");
-    $camHeight.val(1944).trigger("input");
-    $left.val(379).trigger("input");
-    $top.val(10).trigger("input");
-    $radius.val(879).trigger("input");
+    $("#camWidth").val(2592).trigger("input");
+    $("#camHeight").val(1944).trigger("input");
+    $("#left").val(379).trigger("input");
+    $("#top").val(10).trigger("input");
+    $("#radius").val(879).trigger("input");
   });
   
 
@@ -106,45 +97,21 @@ export function main(sources: Sources): Sinks {
   const start$ = toggle$.compose(sampleCombine(state$)).filter(([_,a])=> a === "paused"   ).map(()=>{ logger("start clicked"); });
   const stop$  = toggle$.compose(sampleCombine(state$)).filter(([_,a])=> a === "recording").map(()=>{ logger("stop clicked"); });
   
-  const devices$ = <Stream<MediaDeviceInfo[]>>xs.fromPromise(navigator.mediaDevices.enumerateDevices());
-
-  const deviceIds$ = devices$.map((devices)=>{
-    const $devices = {
-      audioinput:  {$: $audioinput,  opt: createLabel(devices, "audioinput")},
-      audiooutput: {$: $audiooutput, opt: createLabel(devices, "audiooutput")},
-      videoinput:  {$: $videoinput,  opt: createLabel(devices, "videoinput")},
-    };
-    return getCombinedSelectStreamWithStorage(localStorage, $devices);
-  }).flatten();
-
-  const size$ = (function() {
-    type CamSize = { width: number;    height: number;    };
-    const $size  = { width: $camWidth, height: $camHeight };
-    return getCombinedInputStreamWithStorage<CamSize>(localStorage, $size).map((a)=>{
-      logger("size: "+dump(a, 1));
-      return a;
-    });
-  })();
-
-  const deviceConstraints$ = xs.combine(deviceIds$, size$).map(([a, b])=> ({...a, ...b}));
-
-  const fisheye$ = (function() {
-    type FishEyeProp = { left: number; top: number; radius: number; };
-    const $fisheye   = { left: $left,  top: $top,   radius: $radius };
-    return getCombinedInputStreamWithStorage<FishEyeProp>(localStorage, $fisheye).map((a)=>{
-      logger("fisheye: "+dump(a, 1));
-      return a;
-    });
-  })();
-
+  const deviceConstraints$ = DevSetView.deviceConstraints$.map((a)=>{
+    logger("deviceConstraints: "+dump(a, 1));
+    return a;
+  });
+  const fisheyeProps$ = fishSetView.fisheyeProps$.map((a)=>{
+    logger("fisheyeProps: "+dump(a, 1));
+    return a;
+  });
+  
 
   // action
 
   runEff(state$.map((state)=>{
     $state.html(state);
   }));
-
-  const frame$ = xs.combine(timeout(1000), fisheye$).map(([_, a])=> a);
 
   runEff(
     act$
@@ -154,12 +121,8 @@ export function main(sources: Sources): Sinks {
         video.controls = true;
         video.loop = true;
         video.play();
-        const {clip, ctx} = clipRect(video);
-        $(ctx.canvas).appendTo("body"); // for debug
         $(video).appendTo("body"); // for debug
-        return frame$.map(({left, top, radius})=>{ clip(left, top, radius); });
       })
-      .flatten()
   );
 /*
     return fromPromise((async ()=>{
@@ -179,7 +142,7 @@ export function main(sources: Sources): Sinks {
 
   const element$ = xs.of(element);
 
-  return {element$, start$, stop$, deviceConstraints$};
+  return {element$, start$, stop$, deviceConstraints$, fisheyeProps$};
 }
 
 export function makeDriver($container: JQuery) {
@@ -189,10 +152,11 @@ export function makeDriver($container: JQuery) {
     const start$ = sink$.map((o)=> o.start$).flatten();
     const stop$ = sink$.map((o)=> o.stop$).flatten();
     const deviceConstraints$ = sink$.map((o)=> o.deviceConstraints$).flatten();
+    const fisheyeProps$ = sink$.map((o)=> o.fisheyeProps$).flatten();
     runEff(element$.map((element)=>{
       $container.append(element);
     }));
-    return {element$, start$, stop$, deviceConstraints$};
+    return {element$, start$, stop$, deviceConstraints$, fisheyeProps$};
   };
 }
 
@@ -200,4 +164,5 @@ function createStyle(id: string): string {
   return `
   `;
 }
+
 
