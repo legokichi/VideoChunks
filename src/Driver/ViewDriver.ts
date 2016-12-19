@@ -14,10 +14,12 @@ import {load_image} from "duxca.lib.js/lib/Canvas";
 import {fromPromise} from "duxca.lib.js/lib/XStream";
 import {dump} from "duxca.lib.js/lib/Algorithm";
 
-import {logger, elogger, clipRect} from "../Util/util";
+import {REC_FPS} from "../Component/Main";
+
+import {logger, elogger} from "../Util/util";
 import {deviceConstraintsSettingView, DeviceConstraints} from "../Util/ViewUtil";
 import {fisheyeSettingView, FishEyeProps} from "../Util/ViewUtil";
-
+import {clippedVideoView} from "../Util/ViewUtil";
 
 
 export interface Sources {
@@ -30,7 +32,6 @@ export interface Sinks {
   start$: Stream<void>;
   stop$: Stream<void>;
   deviceConstraints$: Stream<DeviceConstraints>;
-  fisheyeProps$: Stream<FishEyeProps>;
 }
 
 export function main(sources: Sources): Sinks {
@@ -42,7 +43,11 @@ export function main(sources: Sources): Sinks {
   const element = document.createElement("div");
   const DevSetView = deviceConstraintsSettingView();
   const fishSetView = fisheyeSettingView();
-
+  const fisheyeProps$ = fishSetView.fisheyeProps$.map((a)=>{
+    logger("fisheyeProps: "+dump(a, 1));
+    return a;
+  });
+  const CVV = clippedVideoView(REC_FPS, act$.map((o)=> o.videoURL), fisheyeProps$);
 
   // view
   
@@ -66,6 +71,7 @@ export function main(sources: Sources): Sinks {
         fishSetView.element,
       ),
       $newLens,
+      CVV.element
     ),
     $("<fieldset />").append(
       $("<legend />").html("log"),
@@ -101,11 +107,7 @@ export function main(sources: Sources): Sinks {
     logger("deviceConstraints: "+dump(a, 1));
     return a;
   });
-  const fisheyeProps$ = fishSetView.fisheyeProps$.map((a)=>{
-    logger("fisheyeProps: "+dump(a, 1));
-    return a;
-  });
-  
+
 
   // action
 
@@ -113,36 +115,11 @@ export function main(sources: Sources): Sinks {
     $state.html(state);
   }));
 
-  runEff(
-    act$
-      .map(({videoURL})=> fromPromise(load_video(videoURL, true), elogger(new Error)) )
-      .flatten()
-      .map((video)=>{
-        video.controls = true;
-        video.loop = true;
-        video.play();
-        $(video).appendTo("body"); // for debug
-      })
-  );
-/*
-    return fromPromise((async ()=>{
-      
-      const thumbnailBlobs = await getThumbnails(video, 1);
-      thumbnailBlobs
-        .map(URL.createObjectURL.bind(URL))
-        .map(load_image)
-        .map((a)=>
-          a.then((a)=>
-            $(a).appendTo("body") ) );
-      return eff$;
-
-*/
-  
 
 
   const element$ = xs.of(element);
 
-  return {element$, start$, stop$, deviceConstraints$, fisheyeProps$};
+  return {element$, start$, stop$, deviceConstraints$};
 }
 
 export function makeDriver($container: JQuery) {
@@ -152,11 +129,10 @@ export function makeDriver($container: JQuery) {
     const start$ = sink$.map((o)=> o.start$).flatten();
     const stop$ = sink$.map((o)=> o.stop$).flatten();
     const deviceConstraints$ = sink$.map((o)=> o.deviceConstraints$).flatten();
-    const fisheyeProps$ = sink$.map((o)=> o.fisheyeProps$).flatten();
     runEff(element$.map((element)=>{
       $container.append(element);
     }));
-    return {element$, start$, stop$, deviceConstraints$, fisheyeProps$};
+    return {element$, start$, stop$, deviceConstraints$};
   };
 }
 

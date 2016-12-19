@@ -28,8 +28,10 @@
   "dependencies": {
     "@cycle/xstream-run": "^4.1.0",
     "@types/node": "0.0.3",
-    "duxca.lib.js": "legokichi/duxca.lib.js#master",
+    "@types/three": "0.0.28",
+    "duxca.lib.js": "duxca/duxca.lib.js#master",
     "events": "^1.1.1",
+    "three": "^0.83.0",
     "xstream": "^9.0.0"
   },
   "typings": "./lib/index.d.ts",
