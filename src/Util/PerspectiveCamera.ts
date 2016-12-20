@@ -1,8 +1,5 @@
 import * as THREE from "three";
 
-import {load_video} from "duxca.lib.js/lib/Media";
-import {logger} from "./util";
-
 export class PerspectiveCamera {
   renderer: THREE.WebGLRenderer;
   canvas: HTMLCanvasElement;
@@ -28,6 +25,8 @@ export class PerspectiveCamera {
 
     this.local.position.z = 0;
     this.camera.position.z = 0.01;
+    //this.camera.position.x = 2000; // for debug
+    //this.camera.rotation.y = Math.PI/2; // for debug
 
     this.scene.add(this.camera);
     this.scene.add(this.local);
@@ -35,17 +34,8 @@ export class PerspectiveCamera {
     window["camera"] = this;
   }
 
-  getRendererFromVideo(video: HTMLVideoElement) {
+  getRenderer(ctx: CanvasRenderingContext2D) {
     const {scene, camera, renderer} = this;
-
-    const size = Math.min(video.videoWidth, video.videoHeight);
-    for(var i=0; size > Math.pow(2, i); i++); // 2^n の大きさを得る
-    const pow = Math.pow(2, i); // 解像度 // i+1 オーバーサンプリングして解像度をより高く
-
-    const {ctx, clip} = clipRect(video, 0, 0, size/2, pow);
-
-    //document.body.appendChild(video); // for debug
-    //document.body.appendChild(ctx.canvas); // for debug
     
     const tex = new THREE.Texture(ctx.canvas);
     const mesh = createFisheyeMesh(tex);
@@ -57,8 +47,7 @@ export class PerspectiveCamera {
     this.meshes.push(mesh);
     this.texis.push(tex);
 
-    return function draw(left: number, top: number, radius: number){
-      clip(left, top, radius);
+    return function draw(){
       tex.needsUpdate = true;
       renderer.render(scene, camera);
     }
@@ -107,7 +96,7 @@ export class PerspectiveCamera {
 export function createFisheyeMesh(fisheye_texture: THREE.Texture): THREE.Mesh { // 正方形テクスチャを仮定
   const MESH_N = 64;
   // SphereGeometry(radius, widthSegments, heightSegments, phiStart, phiLength, thetaStart, thetaLength)
-  const sphere = new THREE.SphereGeometry(1000, MESH_N, MESH_N, 0, Math.PI);
+  const sphere = new THREE.SphereGeometry(1000, MESH_N, MESH_N, Math.PI, Math.PI);
   const {vertices, faces, faceVertexUvs} = sphere;
   const radius = sphere.boundingSphere.radius;
   // 半球の正射影をとる
@@ -122,89 +111,7 @@ export function createFisheyeMesh(fisheye_texture: THREE.Texture): THREE.Mesh { 
   });
   const mat = new THREE.MeshBasicMaterial( { color: 0xFFFFFF, map: fisheye_texture, side: THREE.BackSide } );
   const mesh = new THREE.Mesh(sphere, mat);
-  mesh.rotation.x = Math.PI*3/2; // 北緯側の半球になるように回転
+  mesh.rotation.x = Math.PI*1/2; // 北緯側の半球になるように回転
   return mesh;
 }
-
-
-export function clipRect(
-  video: HTMLVideoElement,
-  left=0,
-  top=0,
-  radius=Math.min(video.videoWidth, video.videoHeight)/2,
-  targetWidth?: number
-): {
-    clip: (left: number, top: number, radius: number)=>void,
-    ctx: CanvasRenderingContext2D
-  } {
-  const cnv = document.createElement("canvas");
-  const ctx = <CanvasRenderingContext2D>cnv.getContext("2d");
-  const {videoWidth, videoHeight} = video;
-  let [sx, sy, sw, sh, dx, dy, dw, dh] = [0,0,0,0,0,0,0,0];
-  logger(`source video size${videoWidth}x${videoHeight}`);
-  update(left, top, radius);
-  //document.body.appendChild(video); // for debug
-  //document.body.appendChild(cnv); // for debug
-  let [l, t, r] = [left, top, radius];　// メモ化用の引数キャッシュ
-  return {ctx, clip};
-  function clip(left: number, top: number, radius: number){
-    if(l !== left || t !== top || r !== radius){ // どれかひとつでも以前と異なっていたら
-      update(left, top, radius);
-      [l, t, r] = [left, top, radius];
-    }else{
-      cnv.width = cnv.width;
-    }
-    ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
-  }
-  function update(left: number, top: number, radius: number){
-    // side-effect function
-    const o = calc(left, top, radius, targetWidth);
-    //　構造化代入は再代入に使えない！
-    sx = o.sx;
-    sy = o.sy;
-    sw = o.sw;
-    sh = o.sh;
-    dx = o.dx;
-    dy = o.dy;
-    dw = o.dw;
-    dh = o.dh;
-    cnv.width = dw;
-    cnv.height = dh;
-  }
-  function calc(left: number, top: number, radius: number, targetWidth?: number){
-    // pure function
-    const clippedWidth  = radius*2; // 
-    const clippedHeight = radius*2; 
-    logger(`clipped size${clippedWidth}x${clippedHeight}, (${left},${top})`);
-    let pow = clippedHeight;
-    if(targetWidth != null){
-      pow = targetWidth;
-      //for(var i=0; clippedHeight > Math.pow(2, i); i++); // 2^n の大きさを得る
-      //pow = Math.pow(2, i); // 解像度 // i+1 オーバーサンプリングして解像度をより高く
-    }
-    let sx = left;
-    let sw = clippedWidth;
-    let sy = top;
-    let sh = clippedHeight;
-    let dx = 0;
-    let dy = 0;
-    let dw = pow;
-    let dh = pow; // 縮小先の大きさ
-    if(left < 0){
-      sx = 0;
-      sw = clippedWidth - left;
-      dx = -left*pow/clippedWidth;
-      dw = sw*pow/clippedWidth;
-    }
-    if(top < 0){
-      sy = 0;
-      sh = clippedHeight - top;
-      dy = -top*pow/clippedHeight;
-      dh = sh*pow/clippedHeight;
-    }
-    logger(`target fisheye size: ${dw}x${dh}`);
-    return {sx, sy, sw, sh, dx, dy, dw, dh};
-  }
-}
-
 

@@ -1,6 +1,6 @@
 import * as $ from "jquery";
 
-import * as Main from "./Component/Main";
+import * as Main from "./Component/ClippedVideo";
 import {logger} from "./Util/util";
 
 window["$"] = $; // for debug

@@ -177,7 +177,7 @@ export function fisheyeSettingView(): { fisheyeProps$: Stream<FishEyeProps>, ele
   return {element, fisheyeProps$};
 }
 
-
+/*
 export function clippedVideoView(fps: number, src$: Stream<string>, fisheyeProps$: Stream<FishEyeProps>): { element: Node } {
   const element = document.createElement("div");
   const cam     = new PerspectiveCamera();
@@ -328,3 +328,4 @@ export function clippedVideoView(fps: number, src$: Stream<string>, fisheyeProps
 
   return {element};
 }
+*/

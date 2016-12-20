@@ -71,7 +71,7 @@ export async function createRecordContext(dc: DeviceConstraints){
   const opt = {
     audio: {deviceId: {exact: audioinput} },
     video: {deviceId: {exact: videoinput},
-            frameRate: { min: REC_FPS-5, ideal: REC_FPS, max: REC_FPS+5 },
+            frameRate: { min: 5, ideal: 10, max: 15 },
             width: {min: width},
             height: {min: height} } };
   logger(`use option: ${JSON.stringify(opt, null, "  ")}`);
