@@ -66,27 +66,30 @@ export module View {
   export type Second    = number;
   export type Radian    = number;
   export type Pixel     = number;
+
+  export interface Props {
+    videoURL: URLString; // 固定値
+    startTime: UNIXTime; // 固定値
+    pastTime: Second; // 優先度: storage = form > props$
+    fisheye: { // 優先度: storage = form > props$
+      centerX: Pixel;
+      centerY: Pixel;
+      radius: Radian;
+    };
+    storage: JSONStorage;
+    /*
+    JSONStorage は
+    {
+      fov?: {pitch: number; yaw: number};
+      zoom?: number;
+      pastTime?: Second;
+      fisheyeProps: ...
+    } をもつべきである
+    */
+  }
+
   export interface Sources {
-    props$: Stream<{
-      videoURL: URLString; // 固定値
-      startTime: UNIXTime; // 固定値
-      pastTime: Second; // 優先度: storage = form > props$
-      fisheye: { // 優先度: storage = form > props$
-        centerX: number;
-        centerY: number;
-        radius: number;
-      };
-      storage: JSONStorage;
-      /*
-      JSONStorage は
-      {
-        fov?: {pitch: number; yaw: number};
-        zoom?: number;
-        pastTime?: Second;
-        fisheyeProps: ...
-      } をもつべきである
-      */
-    }>;
+    props$: Stream<Props>;
   }
 
   export interface Sinks {
