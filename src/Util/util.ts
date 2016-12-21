@@ -158,3 +158,9 @@ export function clipRect(
 }
 
 
+
+
+export function blobToURL(blob: Blob, url=""){
+  URL.revokeObjectURL(url)
+  return URL.createObjectURL(blob);
+}

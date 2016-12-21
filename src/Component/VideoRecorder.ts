@@ -19,7 +19,7 @@ import * as RD from "../Driver/RecorderDriver";
 
 import {deviceConstraintsSettingView, DeviceConstraints} from "../Util/ViewUtil";
 import {fisheyeSettingView, FishEyeProps} from "../Util/ViewUtil";
-import {logger, elogger} from "../Util/util";
+import {logger, elogger, blobToURL} from "../Util/util";
 
 
 export function run($container: JQuery){
@@ -39,16 +39,40 @@ export module Component {
   }
 
   export function main(sources: Sources): Sinks {
-    const {start$, stop$, deviceConstraints$, fisheyeProps$} = sources.View;
+    const {start$, stop$, deviceConstraints$} = sources.View;
 
     // state
 
     // start 系列
-    const {ended$: props$, state$} = RD.main({start$, stop$, deviceConstraints$, fisheyeProps$});
-    
+
+    const _start$ = start$
+      .compose(sampleCombine(deviceConstraints$))
+      .map(([_, deviceConstraints])=>{
+        return {deviceConstraints, blobToURL, fps: 15};
+      });
+
+    const {ended$, state$} = RD.main({start$: _start$, stop$});
+
+    runEff(
+      ended$
+        .map(async ({startTime, stopTime, videoURL, fps})=>{
+          const video = await loadVideo(videoURL, true)
+          video.controls = true;
+          $(video).appendTo("body");
+          $("body").append(
+            $("<time />").html(""+startTime),
+            "~",
+            $("<time />").html(""+stopTime),
+            `, ${fps}fps`,
+            $("<br />")
+          );
+        })
+        .map((prm)=> fromPromise(prm, elogger(new Error)) )
+    );
+
 
     return {
-      View: {props$, state$},
+      View: {state$},
     };
   }
 }
@@ -58,7 +82,6 @@ export module Component {
 export module View {
 
   export interface Sources {
-    props$: Stream<{ videoURL: string; startTime: number; }>;
     state$: Stream<"recording"|"paused">;
   }
 
@@ -71,7 +94,7 @@ export module View {
   }
 
   export function main(sources: Sources): Sinks {
-    const {props$, state$: _state$} = sources;
+    const {state$: _state$} = sources;
     const state$ = _state$.startWith("paused");
 
     // parameter
@@ -83,14 +106,7 @@ export module View {
       logger("fisheyeProps: "+dump(a, 1));
       return a;
     });
-    runEff(
-      props$
-        .map(({videoURL})=>{
-          const video = document.createElement("video");
-          video.src = videoURL;
-          $(video).appendTo("body");
-        })
-    );
+
     //const props$ = xs.create<CV.View.Props>();
     //const CVM = CV.View.main({props$});
 
