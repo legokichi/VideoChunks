@@ -15,10 +15,10 @@ import * as EV from "duxca.lib.js/lib/Event";
 import {loadVideo} from "duxca.lib.js/lib/Media";
 import {formatDate} from "duxca.lib.js/lib/Time";
 import {adapter, fromPromise, timeout, runEff, fromMediaElement, fromEvent} from "duxca.lib.js/lib/XStream";
-import {on, touchstart, touchmove, touchend} from "duxca.lib.js/lib/XStream2JQuery";
+import {on, touchstart, touchmove, touchend, getInputStreamWithStorage, JSONStorage, getItem} from "duxca.lib.js/lib/XStream2JQuery";
 
 import {PerspectiveCamera} from "../Util/PerspectiveCamera";
-import {getInputStreamWithStorage} from "../Util/ViewUtil";
+
 
 /*
 <object data="images/wave.swf" width="400" height="300">
@@ -50,9 +50,8 @@ export module Component {
     const props$ = xs.of({
       videoURL: "01eb2a76-072c-4195-8c26-a71646b08d2f.webm", //"80eab061-a9b2-49cb-8996-88783a7bc0f8.webm",
       startTime: 1482131209071,
-      pastTime: 0,
-      fov:  { pitch: Math.PI*1/8, yaw: 0 },
-      rect: { centerX: 1259, centerY: 887, radius: 879 },
+      pastTime: 60,
+      fisheye: { centerX: 1259, centerY: 887, radius: 879 },
       storage: localStorage,
     });
     return {
@@ -69,12 +68,24 @@ export module View {
   export type Pixel     = number;
   export interface Sources {
     props$: Stream<{
-      videoURL: URLString;
-      startTime: UNIXTime;
-      pastTime: Second;
-      fov: { pitch: Radian; yaw: Radian; };
-      rect: { centerX: Pixel; centerY: Pixel; radius: Pixel; };
-      storage: Storage;
+      videoURL: URLString; // 固定値
+      startTime: UNIXTime; // 固定値
+      pastTime: Second; // 優先度: storage = form > props$
+      fisheye: { // 優先度: storage = form > props$
+        centerX: number;
+        centerY: number;
+        radius: number;
+      };
+      storage: JSONStorage;
+      /*
+      JSONStorage は
+      {
+        fov?: {pitch: number; yaw: number};
+        zoom?: number;
+        pastTime?: Second;
+        fisheyeProps: ...
+      } をもつべきである
+      */
     }>;
   }
 
@@ -97,9 +108,9 @@ export module View {
     const $virtualTime = $("<time />").addClass("virtualTime").html("0");
     const $seek        = $("<input />").addClass("seek").attr({type: "range", min: 0, max: 1, step: 1/1000}).val(0);
     const $zoom        = $("<input />").addClass("zoom").attr({type: "range", min: 0.25, max: 2, step: 1/1000}).val(0.5);
-    const $centerX     = $("<input />").attr({type: "number", name: "centerX", id: "centerX"}).val(300);
+    const $centerX     = $("<input />").attr({type: "number", name: "centerX", id: "centerX"}).val(0);
     const $centerY     = $("<input />").attr({type: "number", name: "centerY", id: "centerY"}).val(0);
-    const $radius      = $("<input />").attr({type: "number", name: "radius",  id: "radius"}).val(875);
+    const $radius      = $("<input />").attr({type: "number", name: "radius",  id: "radius"}).val(0);
     const $style       = $("<style />").html(`
       body {
         margin: 0px;
@@ -118,6 +129,7 @@ export module View {
         user-select: none;
         pointer-events: none;
       }
+      #${id} .controls button,
       #${id} .controls input {
         pointer-events: initial;
       }
@@ -145,8 +157,9 @@ export module View {
       .map(({videoURL})=> fromPromise(loadVideo(videoURL, true)) )
       .flatten()
       .compose(sampleCombine(props$))
-      .map(([video, {pastTime}])=>{
-        video.currentTime = pastTime; // 初期シーク位置
+      .map(([video, {pastTime, storage}])=>{
+        video.currentTime = getItem(storage, "pastTime", Number.isFinite, pastTime); // 初期シーク位置
+        $seek.val(video.currentTime/video.duration); // 初期位置を反映
         return fromPromise<HTMLVideoElement>(EV.fromEvent(video, "seeked").then(()=> video));
       }).flatten();
 
@@ -156,8 +169,8 @@ export module View {
         const {videoWidth, videoHeight} = video;
 
         video.controls = true; // for debug
-        video.loop = true; // for debug
-        video.play(); // for debug
+        //video.loop = true; // for debug
+        //video.play(); // for debug
         //$(video).appendTo(".controls"); // for debug
 
         const size = Math.min(videoWidth, videoHeight);
@@ -257,8 +270,8 @@ export module View {
             }), {deltaX:0, deltaY: 0, prev: startPos})
             .map(({deltaX, deltaY})=> ({deltaX, deltaY}) ) )
         .flatten();
-
-      runEff(
+      // 現在のあるべき姿勢
+      const fov$ = xs.merge(
         deltaPos$
           .map(({deltaX, deltaY})=>{
             const {pitch, yaw} = cam.getCameraPose();
@@ -267,34 +280,41 @@ export module View {
             const _yaw   = yaw   + alpha * deltaX * -1;
             if(_pitch < Math.PI*1/8){ _pitch = Math.PI*1/8; }
             if(_pitch > (Math.PI/2)*7/8){ _pitch = (Math.PI/2)*7/8; }
-            cam.setCameraPose(_pitch, _yaw);
-            emitter.emit("render");
-          })
+            return {pitch: _pitch, yaw: _yaw};
+          }),
+        props$.map(({storage})=>
+          getItem<{pitch:number,yaw:number}>(storage, "fov",
+            ({pitch, yaw})=> Number.isFinite(pitch+yaw),
+            {pitch: Math.PI*1/8, yaw: 0}) ) // 初期値をストレージから探し、なければデフォルト値
       );
-
-      // 初期値
       runEff(
-        props$
-          .map(({fov: {pitch, yaw}})=>{
+        fov$
+          .compose(sampleCombine(props$))
+          .map(([{pitch, yaw}, {storage}])=>{
+            storage.setItem("fov", JSON.stringify({pitch, yaw})); // ストレージに保存
             cam.setCameraPose(pitch, yaw);
+            emitter.emit("render");
           })
       );
     })();
 
     (()=>{
       // ズーム
+      const scale$ = xs.merge(
+        on($zoom, "input").map(()=> Number($zoom.val()) ), // form 値
+        props$
+          .map(({storage})=> getItem(storage, "zoom", Number.isFinite, Number($zoom.val())) ) // 初期値をストレージから探し、なければフォーム値
+          .map((scale)=> ($zoom.val(scale), scale) ) // 値をフォームに反映
+      );
       runEff(
-        on($zoom, "input")
-          .map(()=>{
-            const scale = Number($zoom.val());
-            cam.camera.zoom = scale;
-            cam.camera.updateProjectionMatrix();
+        scale$
+          .compose(sampleCombine(props$))
+          .map(([scale, {storage}])=>{
+            storage.setItem("zoom", JSON.stringify(scale)); // ストレージに保存
+            cam.setZoom(scale); // ビューに反映
             emitter.emit("render");
           })
       );
-      // 初期値
-      cam.camera.zoom = Number($zoom.val());
-      cam.camera.updateProjectionMatrix();
     })();
 
     // 再生・一時停止トグル
@@ -307,39 +327,35 @@ export module View {
         })
     );
 
+    const startState$ = touchstart($seek)
+      .compose(sampleCombine(video$))
+      .map(([_, video])=> video.paused );
+
     // シークバー
     runEff(xs.merge(
       // seekstart
-      touchstart($seek)
+      startState$
         .compose(sampleCombine(video$))
-        .map(([_, video])=>{ video.pause(); }),
+        .map(([state, video])=>{ video.pause(); }),
       // seekend
       touchend($seek)
-        .compose(sampleCombine(video$))
-        .map(([_, video])=>{ video.play(); }),
+        .compose(sampleCombine(startState$, video$))
+        .map(([_, paused, video])=>{ if(!paused) video.play(); }),
       // seeking
       on($seek, "input")
-        .compose(sampleCombine(video$))
-        .map(([a, video])=>{
+        .compose(sampleCombine(video$, props$))
+        .map(([a, video, {storage}])=>{
           const range = Number($seek.val());
           video.currentTime = video.duration * range;
+          EV.fromEvent(video, "seeked").then(()=>{
+            emitter.emit("render");
+          });
         }),
       // playing
       frame$
         .compose(sampleCombine(video$)) // シーク反映
         .map(([_, video])=>{ $seek.val(video.currentTime/video.duration); }),
     ));
-
-    // 経過時間
-    runEff(
-      frame$
-        .compose(sampleCombine(video$, props$))
-        .map(([_, video, {startTime}])=>{
-          const virtualTime = startTime + video.currentTime * 1000;
-          $virtualTime.html(formatDate(new Date(virtualTime), "YYYY MM/DD hh:mm:ss"));
-        })
-    );
-    
 
     (()=>{
       // リサイズ
@@ -356,27 +372,36 @@ export module View {
 
       // 表示位置調整
       const fisheyeProps$ = (function() {
-        const centerX$ = getInputStreamWithStorage<number>(localStorage, $centerX, "centerX", "input");
-        const centerY$ = getInputStreamWithStorage<number>(localStorage, $centerY, "centerY", "input");
-        const radius$  = getInputStreamWithStorage<number>(localStorage, $radius,  "radius",  "input");
+        const centerX$ = props$.map(({fisheye: {centerX}, storage})=> getInputStreamWithStorage<number>(storage, $centerX.val(centerX), "centerX", "input") ).flatten();
+        const centerY$ = props$.map(({fisheye: {centerY}, storage})=> getInputStreamWithStorage<number>(storage, $centerY.val(centerY), "centerY", "input") ).flatten();
+        const radius$  = props$.map(({fisheye: {radius }, storage})=> getInputStreamWithStorage<number>(storage, $radius.val(radius),   "radius",  "input") ).flatten();
         return xs.combine(centerX$, centerY$, radius$)
           .map(([centerX, centerY, radius])=> ({centerX, centerY, radius}) );
       })();
 
       runEff(
-        xs.combine(xs.merge(frame$, fromEvent(emitter, "render")), renderer$, fisheyeProps$)
-          .map(([_, renderer, {centerX, centerY, radius}])=>{ renderer(centerX, centerY, radius); })
-      );
-
-      // 初期値設定
-      runEff(
-        props$
-          .map(({rect: {centerX, centerY, radius}})=>{
-            $centerX.val(centerX).trigger("input");
-            $centerY.val(centerY).trigger("input");
-            $radius.val(radius).trigger("input");
+        xs.combine(
+          xs.merge(
+            frame$,
+            fromEvent(emitter, "render"),
+            xs.of("初回レンダリング")
+          ),
+          renderer$,
+          fisheyeProps$,
+          video$,
+          props$
+        )
+          .map(([_, renderer, {centerX, centerY, radius}, video, {startTime, storage}])=>{
+            renderer(centerX, centerY, radius);
+            // 時間
+            const virtualTime = startTime + video.currentTime * 1000;
+            $virtualTime.html(formatDate(new Date(virtualTime), "YYYY MM/DD hh:mm:ss"));
+            const pastTime = video.currentTime;
+            storage.setItem("pastTime", JSON.stringify(pastTime));
           })
       );
+
+      // 初期値は storage の中
     })();
 
     const element$ = xs.of(element);

@@ -81,7 +81,7 @@ export async function createRecordContext(dc: DeviceConstraints){
 
   // 録画設定
   const rec = new MediaRecorder(raw_stream, {mimeType: 'video/webm; codecs="vp8, opus"'});
-  rec.videoBitsPerSecond
+
   const chunks: Blob[] = [];
   rec.ondataavailable = (ev)=>{ chunks.push(ev.data); };
   logger("got MediaRecorder");

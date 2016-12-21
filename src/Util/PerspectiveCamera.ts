@@ -77,6 +77,14 @@ export class PerspectiveCamera {
     return {pitch, yaw};
   }
 
+  setZoom(scale: number): void {
+    this.camera.zoom = scale;
+    this.camera.updateProjectionMatrix();
+  }
+  getZoom(): number {
+    return this.camera.zoom;
+  }
+
   unload(): void {
     // 以前のリソースを消す
     this.meshes.forEach((mesh)=>{
